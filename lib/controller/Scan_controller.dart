@@ -1,6 +1,5 @@
-import 'dart:math';
-
 import 'package:camera/camera.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_tflite/flutter_tflite.dart';
 import 'package:get/get.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -10,6 +9,7 @@ class ScanController extends GetxController {
   void onInit() {
     super.onInit();
     initCamera();
+    initTFLite();
   }
 
   void dispose() {
@@ -20,10 +20,11 @@ class ScanController extends GetxController {
   late CameraController cameraController;
   late List<CameraDescription> cameras;
 
-  late CameraImage cameraImage;
-
   var isCameraInitialized = false.obs;
   var cameraCount = 0;
+
+  var x, y, w, h = 0.0;
+  var label = "";
 
   initCamera() async {
     if (await Permission.camera.request().isGranted) {
@@ -31,17 +32,30 @@ class ScanController extends GetxController {
 
       cameraController = CameraController(cameras[0], ResolutionPreset.max);
       await cameraController.initialize().then((value) {
-        if (cameraCount % 10 == 0) {
-          cameraCount = 0;
-          cameraController.startImageStream((image) => objectDetector(image));
+        cameraController.startImageStream((image) {
+          cameraCount++;
+          if (cameraCount % 10 == 0) {
+            cameraCount = 0;
+            objectDetector(image);
+          }
           update();
-        }
+        });
       });
       isCameraInitialized(true);
       update();
     } else {
       print("Permission Denied");
     }
+  }
+
+  initTFLite() async {
+    await Tflite.loadModel(
+      model: "assets/model.tflite",
+      labels: "assets/labels.txt",
+      isAsset: true,
+      numThreads: 1,
+      useGpuDelegate: false,
+    );
   }
 
   objectDetector(CameraImage image) async {
@@ -59,8 +73,26 @@ class ScanController extends GetxController {
       threshold: 0.4,
     );
 
-    if (detector != null) {
-      log("Result is $detector" as num);
+    if (detector != null && detector.isNotEmpty) {
+      var ourDetectedObject = detector.first;
+
+      // Ensure 'confidenceInClass' and 'rect' are not null before accessing
+      if (ourDetectedObject['confidenceInClass'] != null &&
+          ourDetectedObject['rect'] != null) {
+        // Check confidence threshold
+        if (ourDetectedObject['confidenceInClass'] * 100 > 45) {
+          label = ourDetectedObject['detectedClass'].toString();
+          h = ourDetectedObject['rect']['h'];
+          w = ourDetectedObject['rect']['w'];
+          x = ourDetectedObject['rect']['x'];
+          y = ourDetectedObject['rect']['y'];
+        }
+      }
+      // else {
+      //   debugPrint("EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEe");
+      // }
+      // Update UI after processing
+      update();
     }
   }
 }
